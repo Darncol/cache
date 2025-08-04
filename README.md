@@ -1,4 +1,4 @@
-# Go Simple Cache
+# Go Simple Cache test project
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/Darncol/cache.svg)](https://pkg.go.dev/github.com/Darncol/cache)
 [![Go Report Card](https://goreportcard.com/badge/github.com/Darncol/cache)](https://goreportcard.com/report/github.com/Darncol/cache)
