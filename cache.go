@@ -1,22 +1,23 @@
 package cache
 
 import (
+	"context"
 	"sync"
 	"time"
 )
 
 type Cache struct {
 	cache    map[string]interface{}
-	timeLeft map[string]chan struct{}
+	timeLeft map[string]context.CancelFunc
 	mu       *sync.RWMutex
 }
 
-func (c *Cache) uninstaller(timeLeft time.Duration, key string, timer chan struct{}) {
+func (c *Cache) uninstaller(ctx context.Context, duration time.Duration, key string) {
 	for {
 		select {
-		case <-timer:
+		case <-ctx.Done():
 			return
-		case <-time.After(timeLeft):
+		case <-time.After(duration):
 			c.Delete(key)
 			return
 		}
@@ -25,47 +26,47 @@ func (c *Cache) uninstaller(timeLeft time.Duration, key string, timer chan struc
 
 func (c *Cache) Set(key string, value interface{}, duration time.Duration) {
 	c.mu.Lock()
+	defer c.mu.Unlock()
 
-	oldTimer, ok := c.timeLeft[key]
+	cancel, ok := c.timeLeft[key]
 	if ok {
-		oldTimer <- struct{}{}
+		cancel()
+		delete(c.timeLeft, key)
 	}
 
-	timer := make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
 
-	c.timeLeft[key] = timer
+	c.timeLeft[key] = cancel
 	c.cache[key] = value
 
-	go c.uninstaller(duration, key, timer)
-
-	c.mu.Unlock()
+	go c.uninstaller(ctx, duration, key)
 }
 
-func (c *Cache) Get(key string) interface{} {
+func (c *Cache) Get(key string) (interface{}, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.cache[key]
+
+	value, exist := c.cache[key]
+	return value, exist
 }
 
 func (c *Cache) Delete(key string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	timer, ok := c.timeLeft[key]
+	cancel, ok := c.timeLeft[key]
 	if ok {
-		timer <- struct{}{}
+		cancel()
+		delete(c.timeLeft, key)
 	}
 
-	close(timer)
-
 	delete(c.cache, key)
-	delete(c.timeLeft, key)
 }
 
 func New() *Cache {
 	return &Cache{
 		cache:    make(map[string]interface{}),
-		timeLeft: make(map[string]chan struct{}),
+		timeLeft: make(map[string]context.CancelFunc),
 		mu:       &sync.RWMutex{},
 	}
 }
